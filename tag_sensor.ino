@@ -7,7 +7,8 @@
 // The next four lines contain values which can be modified to balance the sensor for use in games
 
 
-const byte config_max_hits_upper = 21;
+const byte config_npc_mode_max_hits_upper = 21;
+const byte config_player_mode_max_hits_upper = 9;
 const byte config_max_hits_lower = 1;
 
 const unsigned int deathTonePeriodSecs = 60;
@@ -36,6 +37,7 @@ const int signalInt = 1;
 
 // hit point settings
 const int max_hits_address = 0;
+const int mode_address = 16;
 
 byte current_max_hits = 0;
 byte current_hits = 0;
@@ -45,6 +47,8 @@ unsigned int secondsUntilDeath;
 bool isBleedingOut = false;
 bool isDead = false;
 
+bool npcMode = false;
+
 unsigned long lastDetectionTime = 0;
 int detectionTracker = 0;
 
@@ -53,11 +57,15 @@ unsigned long timeOfBleedoutStart = 0;
 unsigned long timeOfDeath = 0;
 
 bool buttonPressed = false;
+unsigned long buttonHeldDuration = 0;
+
+
 bool beenShot = false;
 String logMessage = "";
 
 bool deathMinuteWarningSet = false;
 int deathMinuteWarningCount = 0;
+
 
 
 /*
@@ -82,6 +90,7 @@ void setup() {
   
   // read current hit counter
   loadMaxHitsFromMemory();
+  loadModeFromMemory();
   current_hits = current_max_hits;
   
   logMessage = "Initial max hits (from memory): ";
@@ -108,17 +117,46 @@ void setup() {
   {
     EIFR = 1;
     
+    buttonHeldDuration = 0;
+    do
+    {
+      delay(10);
+      buttonHeldDuration +=10;
+    } while (digitalRead(buttonPin) == LOW);
+    
     bool buttonProcessed = false;
     if (buttonPressed)
     {
-      decrementMaxHits();
+      logMessage = "Button held duration: ";
+      logMessage = logMessage + buttonHeldDuration;
+      Serial.println(logMessage);
+      
+      // more than 10 seconds - switch between player mode and NPC mode
+      if (buttonHeldDuration > 10000)
+      {
+        setNpcMode(!npcMode, false);
+        
+        delay(250);
+      }
+      else if (buttonHeldDuration > 3000)
+      {
+        decrementMaxHits();
+        decrementMaxHits();
+        decrementMaxHits();
+      }
+      else
+      {
+        decrementMaxHits();
+      }
+      
       reportCurrentHits();
+      
       startupEndTime = millis() + startupTimerMilliseconds;
+      
       buttonProcessed = true;
       logMessage = "Max hits changed to ";
       logMessage = logMessage + current_hits;
-      Serial.println(logMessage);
-      
+      Serial.println(logMessage);     
     }
     else
     {
@@ -129,8 +167,6 @@ void setup() {
       buttonPressed = false;
   } while (millis() < startupEndTime);
   // wait until count expires
-
-
 
   // System active siren
   for (int i=0;i<4;i++)
@@ -146,6 +182,7 @@ void setup() {
   logMessage = logMessage + current_hits;
   Serial.println(logMessage);
   saveMaxHitsToMemory();
+  saveModeToMemory();
   Serial.println("Saved to memory");
  
   // set sensor interrupt;
@@ -223,10 +260,33 @@ void loop() {
   }
 }
 
+
+void setNpcMode(bool set_npc_mode, bool suppressAlert)
+{
+  if(set_npc_mode)
+  {
+    logMessage = "NPC MODE!";
+    current_hits = config_npc_mode_max_hits_upper;
+    current_max_hits = config_npc_mode_max_hits_upper;
+    
+    if(!suppressAlert)
+      playNpcModeEnter();
+  }
+  else
+  {
+    logMessage = "PLAYER MODE!";
+    current_hits = config_player_mode_max_hits_upper;
+    current_max_hits = config_player_mode_max_hits_upper;
+    
+    if(!suppressAlert)
+      playPlayerModeEnter();
+  }
+  Serial.println(logMessage);
+}
+
+
 void buttonInterrupt()
 {
-  //detachInterrupt(buttonInt); 
-  
   buttonPressed = true;
 }
 
@@ -274,7 +334,7 @@ void reportCurrentHits()
   Serial.println(logMessage);
   for(int i = 0;i < current_hits; i++)
   {
-      tone(buzzerPin,784, 75);
+      tone(buzzerPin,784+(100*(i%3)), 75);
       digitalWrite(redLedPin, HIGH);
       delay(75);
       digitalWrite(redLedPin, LOW);
@@ -417,12 +477,20 @@ void loadMaxHitsFromMemory()
 {
   // read from EEPROM
   current_max_hits = EEPROM.read(max_hits_address);
-  
+  unsigned long config_max_hits_upper = npcMode ? config_npc_mode_max_hits_upper : config_player_mode_max_hits_upper;
   // if uninitalised, set to max
   if(current_max_hits < config_max_hits_lower || current_max_hits > config_max_hits_upper)
   {  
       current_max_hits = config_max_hits_upper;
   }
+}
+
+void loadModeFromMemory()
+{
+  // read from EEPROM
+  npcMode = EEPROM.read(mode_address);
+  
+  setNpcMode(npcMode, true);
 }
 
 void saveMaxHitsToMemory()
@@ -431,8 +499,15 @@ void saveMaxHitsToMemory()
   EEPROM.write(max_hits_address, current_max_hits);
 }
 
+void saveModeToMemory()
+{
+  // write to permanent
+  EEPROM.write(mode_address, npcMode);
+}
+
 void decrementMaxHits (){
     // if not at lower bound, decrement
+    unsigned long config_max_hits_upper = npcMode ? config_npc_mode_max_hits_upper : config_player_mode_max_hits_upper;
     if(current_max_hits > config_max_hits_lower)
       {  
         current_max_hits --;
@@ -445,4 +520,19 @@ void decrementMaxHits (){
       current_hits = current_max_hits;
 }
 
+void playNpcModeEnter()
+{
+  for(int i =0; i<51;i++){
+    tone(buzzerPin,500+(50*i),18);
+      delay(22);
+  }
+}
+
+void playPlayerModeEnter()
+{
+  for(int i=51; i>0;i--){
+    tone(buzzerPin,500+(50*i),18);
+    delay(22);
+  }
+}
 
