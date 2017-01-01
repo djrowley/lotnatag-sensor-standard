@@ -88,9 +88,14 @@ void setup() {
   
   isBleedingOut = false;
   
-  // read current hit counter
-  loadMaxHitsFromMemory();
+  // load mode first!
   loadModeFromMemory();
+  // read current hit counter  
+  loadMaxHitsFromMemory();
+  
+  if(npcMode)
+    playNpcModeEnter();
+
   current_hits = current_max_hits;
   
   logMessage = "Initial max hits (from memory): ";
@@ -117,54 +122,56 @@ void setup() {
   {
     EIFR = 1;
     
-    buttonHeldDuration = 0;
-    do
-    {
-      delay(10);
-      buttonHeldDuration +=10;
-    } while (digitalRead(buttonPin) == LOW);
-    
-    bool buttonProcessed = false;
+    // button pressed is set by interrupt when the button is pressed (duh).
     if (buttonPressed)
     {
+      // record how long the button was held for (up to 5 seconds)
+      buttonHeldDuration = 0;
+      do
+      {
+        delay(10);
+        buttonHeldDuration +=10;
+      } while (digitalRead(buttonPin) == LOW && buttonHeldDuration <= 5000);
+      
+      // log press duration
       logMessage = "Button held duration: ";
       logMessage = logMessage + buttonHeldDuration;
       Serial.println(logMessage);
       
       // more than 10 seconds - switch between player mode and NPC mode
-      if (buttonHeldDuration > 10000)
+      if (buttonHeldDuration > 5000)
       {
         setNpcMode(!npcMode, false);
-        
-        delay(250);
       }
-      else if (buttonHeldDuration > 3000)
+      else if (buttonHeldDuration > 1000)
       {
-        decrementMaxHits();
-        decrementMaxHits();
-        decrementMaxHits();
+        incrementMaxHits();
       }
       else
       {
+        // press was not a bounce, and was for less than a second - decrement
         decrementMaxHits();
       }
       
       reportCurrentHits();
+        
+      delay(200);
       
       startupEndTime = millis() + startupTimerMilliseconds;
       
-      buttonProcessed = true;
       logMessage = "Max hits changed to ";
       logMessage = logMessage + current_hits;
       Serial.println(logMessage);     
+      
+      // record that button is no longer pressed.
+      buttonPressed = false;
     }
     else
     {
       delay(100);
     }
     
-    if(buttonProcessed)
-      buttonPressed = false;
+      
   } while (millis() < startupEndTime);
   // wait until count expires
 
@@ -268,6 +275,7 @@ void setNpcMode(bool set_npc_mode, bool suppressAlert)
     logMessage = "NPC MODE!";
     current_hits = config_npc_mode_max_hits_upper;
     current_max_hits = config_npc_mode_max_hits_upper;
+    npcMode = true;
     
     if(!suppressAlert)
       playNpcModeEnter();
@@ -277,6 +285,7 @@ void setNpcMode(bool set_npc_mode, bool suppressAlert)
     logMessage = "PLAYER MODE!";
     current_hits = config_player_mode_max_hits_upper;
     current_max_hits = config_player_mode_max_hits_upper;
+    npcMode = false;
     
     if(!suppressAlert)
       playPlayerModeEnter();
@@ -488,7 +497,16 @@ void loadMaxHitsFromMemory()
 void loadModeFromMemory()
 {
   // read from EEPROM
-  npcMode = EEPROM.read(mode_address);
+  unsigned long npc_mode_store = EEPROM.read(mode_address);
+  
+  logMessage = "Mode from memory: ";
+  logMessage = logMessage + npc_mode_store;
+  Serial.println(logMessage);
+  
+  if(npc_mode_store == 1)
+    npcMode = true;
+  else
+    npcMode = false;
   
   setNpcMode(npcMode, true);
 }
@@ -501,8 +519,13 @@ void saveMaxHitsToMemory()
 
 void saveModeToMemory()
 {
+  unsigned long npc_mode_store = 0;
+  
+  if(npcMode)
+    npc_mode_store = 1;
+  
   // write to permanent
-  EEPROM.write(mode_address, npcMode);
+  EEPROM.write(mode_address, npc_mode_store);
 }
 
 void decrementMaxHits (){
@@ -520,12 +543,28 @@ void decrementMaxHits (){
       current_hits = current_max_hits;
 }
 
+void incrementMaxHits (){
+    // if not at lower bound, decrement
+    unsigned long config_max_hits_upper = npcMode ? config_npc_mode_max_hits_upper : config_player_mode_max_hits_upper;
+    if(current_max_hits < config_max_hits_upper)
+      {  
+        current_max_hits ++;
+      }
+      else
+      {
+        // or reset to max if already at lower
+        current_max_hits = config_max_hits_lower;
+      }
+      current_hits = current_max_hits;
+}
+
 void playNpcModeEnter()
 {
   for(int i =0; i<51;i++){
     tone(buzzerPin,500+(50*i),18);
       delay(22);
   }
+  delay(250);
 }
 
 void playPlayerModeEnter()
@@ -534,5 +573,6 @@ void playPlayerModeEnter()
     tone(buzzerPin,500+(50*i),18);
     delay(22);
   }
+  delay(250);
 }
 
