@@ -1,3 +1,19 @@
+/*-----------------------------------------------------------------------
+  
+  Project: LOTNAtag Sensor 
+  Version: 1.2
+  Description: A basic laser tag sensor system for Arduino, compatible with the Starlyte
+  
+  Copyright (c) 2017 David Rowley
+  
+  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+  
+  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+  
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+  
+  ---------------------------------------------------------------------------*/
+
 #include <avr/interrupt.h>
 #include <avr/sleep.h>
 #include <EEPROM.h>
@@ -25,8 +41,9 @@ const unsigned int gracePeriodBetweenDetections = 1500; // how long does sensor 
 
 // SHIELD SETTINGS
 
+// todo - are shields enabled
 // todo - shield hit points
-// todo - shield recovery rate
+// todo - shield recovery rate (0 for full shields instantly)
 
 
 // REGENERATION SETTINGS
@@ -34,7 +51,6 @@ const unsigned int gracePeriodBetweenDetections = 1500; // how long does sensor 
 bool regenerationEnabled = true;
 const unsigned int regenerationHealFrequencySecs = 3;   // how rapidly should regeneration happen (every X seconds)
 const unsigned int regenerationRecoveryPeriodSecs = 10; // how many seconds need to elapse before regeneration can start
-
 
 
 
@@ -302,7 +318,7 @@ void shotDetected()
     beenShot = false;
 }
 
-// returns true if still alive
+// removes a hitpoint from the player, returns true if still alive
 bool removeHitpoint()
 {
   if(current_hits > 0)
@@ -330,6 +346,7 @@ bool removeHitpoint()
     return true;
 }
 
+// adds a hit point to the player (i.e. healing)
 bool addHitpoint()
 {
   if(current_hits < current_max_hits)
@@ -441,25 +458,9 @@ void doTimerAction()
     case STATE_ACTIVE:
           // TODO - if shielded
 
-          // if injured and regeneration enabled
-          if(regenerationEnabled && current_hits < current_max_hits)
-          {
-            int timeUntilRegeneration = time_lastShotReceived + regenerationRecoveryPeriodSecs - systemClockSeconds; 
-            int timeSinceRegenerationStarted = systemClockSeconds - (time_lastShotReceived + regenerationRecoveryPeriodSecs);
-            if(timeUntilRegeneration > 0)
-            {
-                logMessage = "Regeneration begins in: ";
-                logMessage = logMessage + timeUntilRegeneration;
-                Serial.println(logMessage);
-            }
-            
-            else if (timeSinceRegenerationStarted % regenerationHealFrequencySecs == 0)
-            {
-                addHitpoint();
-                playHealReceived();
-            }           
-          }
 
+          if(regenerationEnabled)
+            regenerate();
           
           break;
     case STATE_DYING:
@@ -494,6 +495,39 @@ void doTimerAction()
   }
 
   clockTick = false;
+}
+
+void regenerate()
+{
+    //check regeneration enabled
+    if(!regenerationEnabled)
+      return; //nope
+  
+    // if injured
+    if(current_hits < current_max_hits)
+    {
+      // how long until we start
+      int timeUntilRegeneration = time_lastShotReceived + regenerationRecoveryPeriodSecs - systemClockSeconds; 
+      // how long have we been healing
+      
+      if(timeUntilRegeneration > 0)
+      {
+          logMessage = "Regeneration begins in: ";
+          logMessage = logMessage + timeUntilRegeneration;
+          Serial.println(logMessage);
+      }
+      else 
+      {
+          // how long have we been healing
+          int timeSinceRegenerationStarted = systemClockSeconds - (time_lastShotReceived + regenerationRecoveryPeriodSecs);
+          // regenerate every X seconds
+          if (timeSinceRegenerationStarted % regenerationHealFrequencySecs == 0)
+          {
+            addHitpoint();
+            playHealReceived();
+          }
+      }           
+    }
 }
 
 // player has bled out and is now DEAD.
