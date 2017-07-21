@@ -27,7 +27,7 @@
 // Change these to balance the sensor
 
 const byte config_npc_mode_max_hits_upper = 21;         //maximum number of hitpoints when in NPC mode
-const byte config_player_mode_max_hits_upper = 9;       //maximum number of hitpoints when in player mode
+const byte config_player_mode_max_hits_upper = 21;       //maximum number of hitpoints when in player mode
 const byte config_max_hits_lower = 1;                   //minimum number of hitpoints a player can set 
 
 const unsigned int deathTonePeriodSecs = 60;            // how long the sensor alerts for after being taken down (seconds)
@@ -37,6 +37,26 @@ const unsigned int startupTimerMilliseconds = 5000;     // how long does the sta
 
 const unsigned int gracePeriodBetweenDetections = 1500; // how long does sensor take to recycle between hits
 
+
+// COLOUR SETTINGS
+const bool rgbLed = true;  // change to false if on legacy device with only one LED
+
+const byte hitDetectR = 255;
+const byte hitDetectG = 0;
+const byte hitDetectB = 0;
+
+const byte reportHpR = 255;
+const byte reportHpG = 0;
+const byte reportHpB = 0;
+
+const byte regenR = 0;
+const byte regenG = 255;
+const byte regenB = 0;
+
+
+const byte startupR = 255;
+const byte startupG = 255;
+const byte startupB = 255;
 
 
 // SHIELD SETTINGS
@@ -63,12 +83,12 @@ const unsigned int regenerationRecoveryPeriodSecs = 10; // how many seconds need
  *      3  - INPUT used for the Infrared detector chip.  56khz carrier is removed by chip - expect 
  *      4  - unused - TODO DEVICE CHAINING 
  *      5  - OUTPUT used for buzzer/speaker
- *      6  - OUTPUT used for RED LED
- *      7  - unused - TODO GREEN LED
- *      8  - unused - TODO BLUE LED
- *      9  - unused
- *      10 - unused
- *      11 - unused
+ *      6  - OUTPUT - OPTIONAL - used if not in RGB mode for single output LED
+ *      7  - unused
+ *      8  - unused
+ *      9  - OUTPUT - OPTIONAL - PWM output for RED LED
+ *      10 - OUTPUT - OPTIONAL - PWM output for GREEN LED
+ *      11 - OUTPUT - OPTIONAL - PWM output for BLUE LED
  *      12 - unused
  *      13 - unused
  */
@@ -77,7 +97,12 @@ const unsigned int regenerationRecoveryPeriodSecs = 10; // how many seconds need
 const int buttonPin = 2;  // INPUT
 const int signalPin = 3;  // INPUT
 const int buzzerPin = 5;  // OUTPUT
-const int redLedPin = 6;  // OUTPUT
+const int oneLedPin = 6;  // OUTPUT
+
+const int pwmRedLedPin = 9;  // OUTPUT
+const int pwmGrnLedPin = 10;  // OUTPUT
+const int pwmBluLedPin = 6;  // OUTPUT - cannot use 11 as interferes with TONE function
+
 
 //========================================================================================================
 // INTERRUPT CONFIGURATION
@@ -141,7 +166,17 @@ void setup() {
   Serial.println("Sensor initialisation");
   // set variables
   pinMode(buzzerPin, OUTPUT);
-  pinMode(redLedPin, OUTPUT);
+  
+  if(rgbLed)
+  {
+    pinMode(pwmRedLedPin, OUTPUT);
+    pinMode(pwmGrnLedPin, OUTPUT);
+    pinMode(pwmBluLedPin, OUTPUT);
+  }
+  else
+  {
+    pinMode(oneLedPin, OUTPUT);
+  }
   
   pinMode(buttonPin, INPUT_PULLUP);
   pinMode(signalPin, INPUT_PULLUP);
@@ -295,11 +330,11 @@ void shotDetected()
     time_lastShotReceived = systemClockSeconds;
     unsigned long internalGracePeriodClock = millis();
 
-    digitalWrite(redLedPin, HIGH);
+    ledOn(hitDetectR,hitDetectG,hitDetectB);
     playSensorHit();
 
-
-    digitalWrite(redLedPin, LOW);
+    ledOff();
+    
     bool stillAlive = removeHitpoint();
 
     if(stillAlive)
@@ -391,9 +426,9 @@ void reportCurrentHits()
   for(int i = 0;i < current_hits; i++)
   {
       tone(buzzerPin,784+(100*(i%3)), 75);
-      digitalWrite(redLedPin, HIGH);
+      ledOn(reportHpR,reportHpG,reportHpB);
       delay(75);
-      digitalWrite(redLedPin, LOW);
+      ledOff();
       delay(75);
       
       if((i+1)%3 == 0 || i == current_hits - 1)
@@ -465,7 +500,7 @@ void doTimerAction()
           break;
     case STATE_DYING:
             // alternate LEDs
-            digitalWrite(redLedPin, digitalRead(redLedPin) ^ 1);
+            digitalWrite(oneLedPin, digitalRead(oneLedPin) ^ 1);
 
             // if we are now dead, prepare to DIE!
             if(secondsUntilDeath() <= 0)
@@ -524,7 +559,9 @@ void regenerate()
           if (timeSinceRegenerationStarted % regenerationHealFrequencySecs == 0)
           {
             addHitpoint();
+            ledOn(regenR,regenG,regenB);
             playHealReceived();
+            ledOff();
           }
       }           
     }
@@ -741,10 +778,10 @@ void playSystemStartup()
   // System active siren
   for (int i=0;i<4;i++)
   {
-    digitalWrite(redLedPin, HIGH);
+    ledOn(startupR,startupG,startupB);
     tone(buzzerPin,1046, 400);
     delay(400);
-    digitalWrite(redLedPin, LOW);
+    ledOff();
     tone(buzzerPin,523, 400);
     delay(400);
   }
@@ -827,5 +864,36 @@ void waitUntilInput()
   sleep_disable();                           // unset the flag allowing cpu sleep   
 }
 
+// -------------------------------------------------------------------------------------------------------------
+// LED Management
+// -------------------------------------------------------------------------------------------------------------
+
+void ledOn(byte red, byte grn, byte blue)
+{
+  if(rgbLed)
+  {
+    analogWrite(pwmRedLedPin, red);
+    analogWrite(pwmGrnLedPin, grn);
+    analogWrite(pwmBluLedPin, blue);
+  }
+  else
+  {
+    digitalWrite(oneLedPin, HIGH);
+  }
+}
+
+void ledOff()
+{
+  if(rgbLed)
+  {
+    analogWrite(pwmRedLedPin, 0);
+    analogWrite(pwmGrnLedPin, 0);
+    analogWrite(pwmBluLedPin, 0);
+  }
+  else
+  {
+    digitalWrite(oneLedPin, LOW);
+  }
+}
 
 
